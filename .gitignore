@@ -1,0 +1,11 @@
+/target
+/out
+.vscode/
+*.png
+*.pdn
+*.ai
+*.obj
+*.mtl
+*.bmp
+*.bin
+*.fla
