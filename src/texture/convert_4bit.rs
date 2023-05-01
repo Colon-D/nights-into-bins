@@ -1,6 +1,9 @@
 use crate::texture::CHUNK_SIZE;
 use num_traits::PrimInt;
 
+// uses original C++ decoding,
+// I have not found a solution myself yet.
+
 pub fn convert32x32<N: PrimInt>(array: &mut [N]) {
     // Swap every other pair of columns
     // (I read nibbles opposite of the C++ program)

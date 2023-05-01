@@ -1,6 +1,7 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 use itertools::Itertools;
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -49,6 +50,7 @@ impl Models {
         // iterate through each model
         let obj_file_path = format!("out/{}/{}.obj", stem, stem);
         let mut writer = File::create(obj_file_path)?;
+        writeln!(writer, "mtllib {}.mtl", stem)?;
         let mut e_next = 0;
         for (i, model) in self.0.iter().enumerate() {
             model.write_to_obj(&mut writer, &format!("{}-{}", stem, i), stem, &mut e_next)?;
@@ -60,7 +62,6 @@ impl Models {
 
 pub struct Model {
     pub triangle_strips: Vec<TriangleStrip>,
-    pub material: u32,
 }
 
 impl Model {
@@ -96,23 +97,8 @@ impl Model {
                 reader.seek(SeekFrom::Current(diff as _))?;
             }
 
-            return Ok(Self {
-                triangle_strips,
-                material,
-            });
+            return Ok(Self { triangle_strips });
         }
-
-        // find material
-        loop {
-            let material_signature = reader.read_u32::<LE>()?;
-            if material_signature != 0xFFFFFFFE {
-                // discard next 12 bytes (aligned to 0x0C column)
-                reader.seek(SeekFrom::Current(12))?;
-            } else {
-                break;
-            }
-        }
-        material = reader.read_u32::<LE>()? / 2;
 
         let mut vertex_count = 0;
         // println!("- Reading triangle strips:");
@@ -124,15 +110,12 @@ impl Model {
             // println!("    - Finding triangle strip");
 
             // read triangle strip and add to vector
-            let triangle_strip = TriangleStrip::read(reader)?;
+            let triangle_strip = TriangleStrip::read(reader, &mut material)?;
             vertex_count += triangle_strip.pos.len();
             triangle_strips.push(triangle_strip);
         }
 
-        Ok(Self {
-            triangle_strips,
-            material,
-        })
+        Ok(Self { triangle_strips })
     }
 
     pub fn write_to_obj<T: Write>(
@@ -146,15 +129,20 @@ impl Model {
 
         // create elements for triangles
         // this converts from triangle strips to triangles
-        let mut elements = Vec::<Vec<usize>>::new();
+        // Map of materials to vector of triangles
+        let mut elements = HashMap::<u32, Vec<[usize; 3]>>::new();
 
         const CALC_WINDING_ORDER: bool = true;
 
-        for s in self.triangle_strips.iter() {
+        for ts in self.triangle_strips.iter() {
             if CALC_WINDING_ORDER {
                 // for each (iterator, triangle) in the triangle strip
-                for (e_local, (a, b, c)) in
-                    s.pos.iter().zip(s.norm.iter()).tuple_windows().enumerate()
+                for (e_local, (a, b, c)) in ts
+                    .pos
+                    .iter()
+                    .zip(ts.norm.iter())
+                    .tuple_windows()
+                    .enumerate()
                 {
                     // calculate the average normal (doesn't need to be normalised)
                     let mean_norm = a.1.to() + b.1.to() + c.1.to();
@@ -171,14 +159,15 @@ impl Model {
                     let flip = dot > 0.;
 
                     // add triangle to element buffer in correct order
-                    elements.push(if flip {
-                        vec![
+                    let triangles = elements.entry(ts.material).or_default();
+                    triangles.push(if flip {
+                        [
                             *e_next + e_local,
                             *e_next + e_local + 1,
                             *e_next + e_local + 2,
                         ]
                     } else {
-                        vec![
+                        [
                             *e_next + e_local + 2,
                             *e_next + e_local + 1,
                             *e_next + e_local,
@@ -187,16 +176,17 @@ impl Model {
                 }
             } else {
                 // for each triangle iterator in the triangle strip
-                for e_local in 0..s.pos.len() - 2 {
+                for e_local in 0..ts.pos.len() - 2 {
                     // do not flip flop winding order
-                    elements.push(if e_local % 2 == 1 {
-                        vec![
+                    let triangles = elements.entry(ts.material).or_default();
+                    triangles.push(if e_local % 2 == 1 {
+                        [
                             *e_next + e_local,
                             *e_next + e_local + 1,
                             *e_next + e_local + 2,
                         ]
                     } else {
-                        vec![
+                        [
                             *e_next + e_local + 2,
                             *e_next + e_local + 1,
                             *e_next + e_local,
@@ -204,18 +194,16 @@ impl Model {
                     });
                 }
             }
-            *e_next += s.pos.len();
+            *e_next += ts.pos.len();
         }
 
         writeln!(writer, "o {}", model_name)?;
-        writeln!(writer, "usemtl {}-{}", material_prefix, self.material)?;
 
         for ts in self.triangle_strips.iter() {
             for pos in &ts.pos {
                 writeln!(writer, "v {} {} {}", pos.x, pos.y, pos.z)?;
             }
-        }
-        for ts in self.triangle_strips.iter() {
+
             for norm in &ts.norm {
                 writeln!(
                     writer,
@@ -225,26 +213,28 @@ impl Model {
                     norm.z as f32 / 255.
                 )?;
             }
-        }
-        for ts in self.triangle_strips.iter() {
+
             for uv in &ts.uv {
                 writeln!(writer, "vt {} {}", uv.x, uv.y)?;
             }
         }
-        for tri in elements.iter() {
-            writeln!(
-                writer,
-                "f {}/{}/{} {}/{}/{} {}/{}/{}",
-                tri[0] + 1,
-                tri[0] + 1,
-                tri[0] + 1,
-                tri[1] + 1,
-                tri[1] + 1,
-                tri[1] + 1,
-                tri[2] + 1,
-                tri[2] + 1,
-                tri[2] + 1
-            )?;
+        for (material, triangles) in elements.iter() {
+            writeln!(writer, "usemtl {}-{}", material_prefix, material)?;
+            for tri in triangles {
+                writeln!(
+                    writer,
+                    "f {}/{}/{} {}/{}/{} {}/{}/{}",
+                    tri[0] + 1,
+                    tri[0] + 1,
+                    tri[0] + 1,
+                    tri[1] + 1,
+                    tri[1] + 1,
+                    tri[1] + 1,
+                    tri[2] + 1,
+                    tri[2] + 1,
+                    tri[2] + 1
+                )?;
+            }
         }
 
         Ok(())

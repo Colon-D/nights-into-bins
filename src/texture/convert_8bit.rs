@@ -1,176 +1,176 @@
-use crate::texture::CHUNK_SIZE;
-use ndarray::{s, Array2, ArrayView2};
-use num_traits::PrimInt;
+use ndarray::{s, Array2, ArrayView2, Axis};
 
-// todo: test, and write inverse, + 4x4 chunk swap thing:
-//   every eight rows, if row is 1 in table below, swap every pair of 4 elements in the row.
-//   - 0
-//   - 0
-//   - 1
-//   - 1
-//   - 1
-//   - 1
-//   - 0
-//   - 0
+// there is probably a better way to do this, that does not involve swapping
+// middle quarters. I barely found this solution as it is though...
+pub fn decode<T: Default + Copy>(array: &Array2<T>) -> Array2<T> {
+    let mut out = array.clone();
+
+    // should already be decoded?
+    if out.ncols() == 8 {
+        return out;
+    }
+
+    // deswizzle(?) 32x4 chunks
+    for y in (0..out.nrows()).step_by(4) {
+        for x in (0..out.ncols()).step_by(32) {
+            let x_max = 32.min(out.ncols());
+            let chunk = out.slice(s![y..y + 4, x..x + x_max]);
+
+            let (even, odd) = split_by_column_parity(chunk.view());
+            let chunk = join_vertically(even.view(), odd.view());
+
+            let (even, odd) = split_by_column_parity(chunk.view());
+            let chunk = join_horizontally(even.view(), odd.view());
+
+            let (even, odd) = split_by_row_parity(chunk.view());
+            let chunk = join_horizontally(even.view(), odd.view());
+
+            out.slice_mut(s![y..y + 4, x..x + x_max]).assign(&chunk);
+        }
+    }
+
+    // swap middle quarters around, from smallest to biggest
+    if out.ncols() == 16 {
+        out = swap_middle_quarters(&out, 16);
+    } else if out.ncols() >= 64 {
+        let mut col_size = 64;
+        while col_size <= out.ncols() {
+            out = swap_middle_quarters(&out, col_size);
+            col_size *= 2;
+        }
+    }
+
+    // swap chunks
+    swap_4x4_chunks(&out)
+}
+
 pub fn encode<T: Default + Copy>(array: &Array2<T>) -> Array2<T> {
-    let mut out = Array2::<T>::default((array.nrows(), array.ncols()));
-    for row in (0..array.nrows()).step_by(4) {
-        let chunk = array.slice(s![row..row + 4, ..]);
-        let (even, odd) = split_by_column_parity(&chunk);
-        let joined = join_vertically(&even.view(), &odd.view());
-        let (even, odd) = split_by_column_parity(&joined.view());
-        let joined = join_horizontally(&even.view(), &odd.view());
-        let (even, odd) = split_by_row_parity(&joined.view());
-        let joined = join_horizontally(&even.view(), &odd.view());
-        let mut out_chunk = out.slice_mut(s![row..row + 4, ..]);
-        out_chunk.assign(&joined);
-    }
-    out
-}
+    let mut out = array.clone();
 
-pub fn split_by_column_parity<T: Default + Copy>(array: &ArrayView2<T>) -> (Array2<T>, Array2<T>) {
-    let mut even = Array2::<T>::default((array.nrows(), array.ncols() / 2));
-    let mut odd = Array2::<T>::default((array.nrows(), array.ncols() / 2));
-    for row in 0..array.nrows() {
-        for col in 0..array.ncols() / 2 {
-            even[(row, col)] = array[[row, col * 2]];
-            odd[[row, col]] = array[[row, col * 2 + 1]];
+    // should already be encoded?
+    if out.ncols() == 8 {
+        return out;
+    }
+
+    // swap chunks
+    out = swap_4x4_chunks(&out);
+
+    // swap middle quarters around, from biggest to smallest
+    if out.ncols() == 16 {
+        out = swap_middle_quarters(&out, 16);
+    } else if out.ncols() >= 64 {
+        let mut col_size = out.ncols();
+        while col_size >= 64 {
+            out = swap_middle_quarters(&out, col_size);
+            col_size /= 2;
         }
     }
-    (even, odd)
-}
 
-pub fn split_by_row_parity<T: Default + Copy>(array: &ArrayView2<T>) -> (Array2<T>, Array2<T>) {
-    let mut even = Array2::<T>::default((array.nrows(), array.ncols() / 2));
-    let mut odd = Array2::<T>::default((array.nrows(), array.ncols() / 2));
-    for row in 0..array.nrows() / 2 {
-        for col in 0..array.ncols() {
-            even[[row, col]] = array[[row * 2, col]];
-            odd[[row, col]] = array[[row * 2 + 1, col]];
-        }
-    }
-    (even, odd)
-}
+    // swizzle(?) 32x4 chunks
+    for y in (0..out.nrows()).step_by(4) {
+        for x in (0..out.ncols()).step_by(32) {
+            let x_max = 32.min(out.ncols());
+            let chunk = out.slice(s![y..y + 4, x..x + x_max]);
 
-pub fn join_horizontally<T: Default + Copy>(
-    lhs: &ArrayView2<T>,
-    rhs: &ArrayView2<T>,
-) -> Array2<T> {
-    assert_eq!(lhs.nrows(), rhs.nrows());
-    let mut out = Array2::<T>::default((lhs.nrows(), lhs.ncols() + rhs.ncols()));
-    for row in 0..lhs.nrows() {
-        for col in 0..lhs.ncols() {
-            out[[row, col]] = lhs[[row, col]];
-        }
-    }
-    for row in 0..rhs.nrows() {
-        for col in 0..rhs.ncols() {
-            out[[row, col + lhs.ncols()]] = rhs[[row, col]];
+            let (left, right) = split_vertically(chunk);
+            let chunk = join_by_row_parity(left, right);
+
+            let (left, right) = split_vertically(chunk.view());
+            let chunk = join_by_column_parity(left, right);
+
+            let (top, bottom) = split_horizontally(chunk.view());
+            let chunk = join_by_column_parity(top, bottom);
+            out.slice_mut(s![y..y + 4, x..x + x_max]).assign(&chunk);
         }
     }
     out
 }
 
-pub fn join_vertically<T: Default + Copy>(
-    top: &ArrayView2<T>,
-    bottom: &ArrayView2<T>,
-) -> Array2<T> {
-    assert_eq!(top.ncols(), bottom.ncols());
-    let mut out = Array2::<T>::default((top.nrows() + bottom.nrows(), top.ncols()));
-    for row in 0..top.nrows() {
-        for col in 0..top.ncols() {
-            out[[row, col]] = top[[row, col]];
-        }
-    }
-    for row in 0..bottom.nrows() {
-        for col in 0..bottom.ncols() {
-            out[[row + top.nrows(), col]] = bottom[[row, col]];
-        }
-    }
-    out
-}
-
-pub fn convert_array<N: PrimInt>(num_rows: usize, num_chunks: usize, hex_array: &mut [N]) {
-    let mut unscramble_array = vec![N::zero(); hex_array.len()];
-    let mut out_array = vec![N::zero(); hex_array.len()];
-
-    for i in 0..num_chunks {
-        for j in (0..num_rows).step_by(2) {
-            for k in 0..CHUNK_SIZE {
-                if (j / 2) % 2 == 0 {
-                    let unscramble_index = k * num_rows / 2 + j / 2;
-                    let hex_index = j * num_chunks * CHUNK_SIZE + i * CHUNK_SIZE + k;
-                    unscramble_array[unscramble_index] = hex_array[hex_index];
-                    unscramble_array[unscramble_index + 1] =
-                        hex_array[hex_index + num_chunks * CHUNK_SIZE];
-                } else {
-                    let unscramble_index = (k + 32) * num_rows / 2 + j / 2;
-                    let hex_index = j * num_chunks * CHUNK_SIZE + i * CHUNK_SIZE + k;
-                    unscramble_array[unscramble_index - 1] = hex_array[hex_index];
-                    unscramble_array[unscramble_index] =
-                        hex_array[hex_index + num_chunks * CHUNK_SIZE];
+pub fn swap_4x4_chunks<T: Default + Copy>(array: &Array2<T>) -> Array2<T> {
+    let mut out = array.clone();
+    for y in (2..array.nrows()).step_by(8) {
+        for y in y..y + 4 {
+            for x in (0..array.ncols()).step_by(8) {
+                for x in x..x + 4 {
+                    out[[y, x]] = array[[y, x + 4]];
+                    out[[y, x + 4]] = array[[y, x]];
                 }
             }
         }
-        unscramble(num_rows, &mut unscramble_array);
-
-        for j in 0..CHUNK_SIZE / 2 {
-            for k in 0..num_rows * 2 {
-                out_array[k * num_chunks * CHUNK_SIZE / 2 + i * CHUNK_SIZE / 2 + j] =
-                    unscramble_array[j * num_rows * 2 + k];
-            }
-        }
     }
-    hex_array.copy_from_slice(&out_array);
+    out
 }
 
-// unscramble 32-column chunk of 8-bit game file
-fn unscramble<N: PrimInt>(num_rows: usize, array: &mut [N]) {
-    let mut resolve_array: Vec<N> = vec![N::zero(); array.len()];
-    // order that lines are stored in the chunk
-    let order: [usize; 16] = [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15];
-    let mut indices = [0usize; 4];
-    let mut indices2 = [0usize; 4];
-    for col in 0..CHUNK_SIZE / 2 {
-        // save indices of matching quarter lines that make up each line index in order[]
-        if order[col] % 2 == 0 {
-            indices[0] = order[col] + 17;
-            indices[1] = order[col];
-            indices[2] = order[col] + 33;
-            indices[3] = order[col] + 48;
-            // need two indices arrays because reconstruction order depends on the column
-            indices2[0] = order[col];
-            indices2[1] = order[col] + 17;
-            indices2[2] = order[col] + 48;
-            indices2[3] = order[col] + 33;
-        }
-        // numbers are different depending on parity of index in order[]
-        else {
-            indices[0] = order[col] + 15;
-            indices[1] = order[col];
-            indices[2] = order[col] + 31;
-            indices[3] = order[col] + 48;
-            indices2[0] = order[col];
-            indices2[1] = order[col] + 15;
-            indices2[2] = order[col] + 48;
-            indices2[3] = order[col] + 31;
-        }
-        for row in (0..num_rows / 2).step_by(2) {
-            // k = which quarter line
-            for k in 0..4 {
-                // if col is 0-3 or 8-11, use indices2, else use indices
-                let chunk_index = col * num_rows * 2 + row * 4 + k * 2;
-                let array_index = if (col / 4) % 2 == 0 {
-                    indices2
-                } else {
-                    indices
-                }[k] * num_rows
-                    / 2
-                    + row;
-                resolve_array[chunk_index] = array[array_index];
-                resolve_array[chunk_index + 1] = array[array_index + 1];
+pub fn swap_middle_quarters<T: Default + Copy>(array: &Array2<T>, columns: usize) -> Array2<T> {
+    let quarter = columns / 4;
+    let mut out = array.clone();
+    for y in 0..array.nrows() {
+        for x in (quarter..array.ncols()).step_by(columns) {
+            for x in x..x + quarter {
+                out[[y, x]] = array[[y, x + quarter]];
+                out[[y, x + quarter]] = array[[y, x]];
             }
         }
     }
-    array.clone_from_slice(&resolve_array);
+    out
+}
+
+pub fn split_by_column_parity<T: Default + Copy>(array: ArrayView2<T>) -> (Array2<T>, Array2<T>) {
+    let even = array.slice(s![.., ..;2]).to_owned();
+    let odd = array.slice(s![.., 1..;2]).to_owned();
+    (even, odd)
+}
+
+pub fn join_by_column_parity<T: Default + Copy>(
+    even: ArrayView2<T>,
+    odd: ArrayView2<T>,
+) -> Array2<T> {
+    let mut out = Array2::default((even.nrows(), even.ncols() + odd.ncols()));
+    out.slice_mut(s![.., ..;2]).assign(&even);
+    out.slice_mut(s![.., 1..;2]).assign(&odd);
+    out
+}
+
+pub fn split_by_row_parity<T: Default + Copy>(array: ArrayView2<T>) -> (Array2<T>, Array2<T>) {
+    let even = array.slice(s![..;2, ..]).to_owned();
+    let odd = array.slice(s![1..;2, ..]).to_owned();
+    (even, odd)
+}
+
+pub fn join_by_row_parity<T: Default + Copy>(
+    even: ArrayView2<T>,
+    odd: ArrayView2<T>,
+) -> Array2<T> {
+    let mut out = Array2::default((even.nrows() + odd.nrows(), even.ncols()));
+    out.slice_mut(s![..;2, ..]).assign(&even);
+    out.slice_mut(s![1..;2, ..]).assign(&odd);
+    out
+}
+
+pub fn join_horizontally<'a, T: Default + Copy>(
+    lhs: ArrayView2<'a, T>,
+    rhs: ArrayView2<'a, T>,
+) -> Array2<T> {
+    ndarray::concatenate(Axis(1), &[lhs, rhs]).unwrap()
+}
+
+/// returns (lhs, rhs)
+pub fn split_vertically<T: Default + Copy>(
+    array: ArrayView2<T>,
+) -> (ArrayView2<T>, ArrayView2<T>) {
+    array.split_at(Axis(1), array.ncols() / 2)
+}
+
+pub fn join_vertically<'a, T: Default + Copy>(
+    top: ArrayView2<'a, T>,
+    bottom: ArrayView2<'a, T>,
+) -> Array2<T> {
+    ndarray::concatenate(Axis(0), &[top, bottom]).unwrap()
+}
+
+/// returns (top, bottom)
+pub fn split_horizontally<T: Default + Copy>(
+    array: ArrayView2<T>,
+) -> (ArrayView2<T>, ArrayView2<T>) {
+    array.split_at(Axis(0), array.nrows() / 2)
 }

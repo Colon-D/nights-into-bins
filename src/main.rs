@@ -1,4 +1,8 @@
-use std::{env, fs::File, path::Path};
+use std::{
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+};
 
 use texture::Texture;
 
@@ -9,137 +13,94 @@ mod texture;
 mod vec;
 
 fn main() -> std::io::Result<()> {
-    //* TEST
-    let test_pal = texture::test::palette(texture::test::Test::_8Bit16384Colors128x128);
-    let test_tex_encoded = texture::test::texture(texture::test::Test::_8Bit16384Colors128x128);
-    let mut test_tex_decoded =
-        texture::test::texture(texture::test::Test::_8Bit16384Colors128x128);
+    // //* TEST
+    // //* Create test texture
+    // let mut test_pal = texture::test::palette(texture::test::Test::_4096Colors64x64);
+    // let mut test_tex = texture::test::texture(texture::test::Test::_4096Colors64x64);
 
-    let width = 128usize;
-    let height = 128usize;
+    // //* Decode/Encode
+    // // test_tex.0 = texture::convert_8bit::encode(&test_tex.0);
+    // // test_tex.0 = texture::convert_8bit::decode(&test_tex.0);
 
-    let num_rows = height / 2;
-    let num_chunks = width / 16;
-    texture::convert_8bit::convert_array(
-        num_rows as _,
-        num_chunks as _,
-        &mut test_tex_decoded.data,
-    );
+    // //* Export
+    // let test_tex = Texture::from_palette_and_palette_texture(&test_pal, &test_tex);
+    // test_tex.write_to_image(Path::new("4-bit_64x64_decoded.png"), false);
 
-    let test_tex_encoded = Texture::from_palette_and_palette_texture(&test_pal, &test_tex_encoded);
-    let mut test_tex_decoded =
-        Texture::from_palette_and_palette_texture(&test_pal, &test_tex_decoded);
-    let mut file = File::create("test_encoded_3.png").unwrap();
-    test_tex_encoded.write_to_png(&mut file);
-    let mut file = File::create("test_decoded_3.png").unwrap();
-    test_tex_decoded.write_to_png(&mut file);
-
-    // for every eight rows, starting at 2
-    for rows in (2..height).step_by(8) {
-        // for every eight columns
-        for col in (0..width).step_by(8) {
-            // swap each 4x4 chunk with the 4x4 chunk next to it horizontally
-            for sub_row in 0..4 {
-                for sub_col in 0..4 {
-                    let temp = test_tex_decoded.data[(rows + sub_row) * width + col + sub_col];
-                    test_tex_decoded.data[(rows + sub_row) * width + col + sub_col] =
-                        test_tex_decoded.data[(rows + sub_row) * width + col + sub_col + 4];
-                    test_tex_decoded.data[(rows + sub_row) * width + col + sub_col + 4] = temp;
-                }
-            }
-        }
-    }
-    let mut file = File::create("test_decoded_3_4x4.png").unwrap();
-    test_tex_decoded.write_to_png(&mut file);
-
-    return Ok(());
+    // return Ok(());
+    // //* END TEST
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() != 2 {
-        eprintln!("Usage: program_name <input_file>");
-        std::process::exit(1);
-    }
+    match args.len() {
+        2 => {
+            let binary_path = Path::new(&args[1]);
 
-    let in_path = Path::new(&args[1]);
-
-    // //! THIS DOES NOT WORK
-    // //! THIS WAS A TEST
-    // //! USES ASSIMP
-    // let suzanne_mesh = &Scene::from_file("suzanne.obj", vec![]).unwrap().meshes[0];
-    // let mut suzanne_native = Model {
-    //     triangle_strips: Vec::new(),
-    // };
-    // for face in suzanne_mesh.faces.iter() {
-    //     let mut pos = Vec::new();
-    //     let mut norm = Vec::new();
-    //     let mut uv = Vec::new();
-    //     for idx in face.0.iter() {
-    //         let idx = *idx as usize;
-    //         pos.push(
-    //             suzanne_mesh
-    //                 .vertices
-    //                 .get(idx)
-    //                 .map(|v| Vec3 {
-    //                     x: v.x,
-    //                     y: v.y,
-    //                     z: v.z,
-    //                 })
-    //                 .unwrap(),
-    //         );
-    //         norm.push(
-    //             suzanne_mesh
-    //                 .normals
-    //                 .get(idx)
-    //                 .map(|n| Vec3 {
-    //                     x: (n.x * 255.0) as _,
-    //                     y: (n.y * 255.0) as _,
-    //                     z: (n.z * 255.0) as _,
-    //                 })
-    //                 .unwrap(),
-    //         );
-    //         let suzanne_uv = suzanne_mesh.texture_coords[0].as_ref().unwrap();
-    //         uv.push(
-    //             suzanne_uv
-    //                 .get(idx)
-    //                 .map(|uv| Vec2 { x: uv.x, y: uv.y })
-    //                 .unwrap(),
-    //         );
-    //     }
-    //     suzanne_native
-    //         .triangle_strips
-    //         .push(TriangleStrip { pos, norm, uv });
-    // }
-    // write_model_to_bin(Path::new("test.bin"), &suzanne_native)?;
-
-    if in_path.is_dir() {
-        for entry in std::fs::read_dir(in_path)? {
-            let file_path = entry?.path();
-            if file_path.extension().unwrap().to_str().unwrap() == "BIN" {
-                println!("path: {}", file_path.to_str().unwrap());
+            if binary_path.is_dir() {
+                for entry in std::fs::read_dir(binary_path)? {
+                    let file_path = entry?.path();
+                    if file_path.extension().unwrap().to_str().unwrap() == "BIN" {
+                        println!("path: {}", file_path.to_str().unwrap());
+                        // read from bin file
+                        let models = Models::read_from_bin(&file_path)?;
+                        let textures = Textures::read_from_bin(&file_path)?;
+                        // write to obj files
+                        models.write_to_obj(&file_path)?;
+                        if !models.0.is_empty() {
+                            textures.write_to_mtl(&file_path)?;
+                        }
+                        // write to png files
+                        textures.write_to_image(&file_path)?;
+                    }
+                }
+            } else {
                 // read from bin file
-                let models = Models::read_from_bin(&file_path)?;
-                let textures = Textures::read_from_bin(&file_path)?;
+                let models = Models::read_from_bin(&binary_path)?;
+                let textures = Textures::read_from_bin(&binary_path)?;
                 // write to obj files
-                models.write_to_obj(&file_path)?;
+                models.write_to_obj(&binary_path)?;
                 if !models.0.is_empty() {
-                    textures.write_to_mtl(&file_path)?;
+                    textures.write_to_mtl(&binary_path)?;
                 }
                 // write to png files
-                textures.write_to_png(&file_path)?;
+                textures.write_to_image(&binary_path)?;
             }
         }
-    } else {
-        // read from bin file
-        let models = Models::read_from_bin(&in_path)?;
-        let textures = Textures::read_from_bin(&in_path)?;
-        // write to obj files
-        models.write_to_obj(&in_path)?;
-        if !models.0.is_empty() {
-            textures.write_to_mtl(&in_path)?;
+        3 => {
+            let binary_path = Path::new(&args[1]);
+            let replacement_path = Path::new(&args[2]);
+
+            let mut replacement_textures = HashMap::<PathBuf, Textures>::new();
+            for entry in walkdir::WalkDir::new(replacement_path) {
+                let entry = entry?;
+                let file_path = entry.path();
+                match file_path.extension() {
+                    Some(ext) => {
+                        if ext.to_str().unwrap() == "png" {
+                            // read replacement textures
+                            println!("path: {}", file_path.to_str().unwrap());
+                            let stem = file_path.file_stem().unwrap().to_str().unwrap();
+                            let seperator = stem.find('-').unwrap();
+                            let binary_file_stem = &stem[..seperator];
+                            let texture_index = stem[seperator + 1..].parse().unwrap();
+                            replacement_textures
+                                .entry(PathBuf::from(binary_file_stem).with_extension("BIN"))
+                                .or_default()
+                                .0
+                                .insert(texture_index, Texture::read_from_image(&file_path, true));
+                        }
+                    }
+                    None => (),
+                }
+            }
+            // write replacement texture
+            for (binary_file_stem, textures) in replacement_textures {
+                textures.write_to_bin(&binary_path.join(binary_file_stem))?;
+            }
         }
-        // write to png files
-        textures.write_to_png(&in_path)?;
+        _ => {
+            eprintln!("Error. Usage:\n  ./nights_into_bins <binary_file>\n    extracts textures and models from binary files in directory and exports into ./out/\n  ./nights_into_bins <binary_file_directory>\n    extracts textures and models from binary file and exports into ./out/\n  ./nights_into_bins <binary_file_directory> <texture_replacement_file_directory>\n    copies binary files into mod at ./in/nights.test.nightsintobins/ and replaces their textures");
+            std::process::exit(1);
+        }
     }
 
     Ok(())

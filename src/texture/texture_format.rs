@@ -111,11 +111,11 @@ impl TextureFormats {
         // output information
         if verbose {
             println!("Texture formats:");
-            for tf in texture_formats.iter() {
+            for (i, tf) in texture_formats.iter().enumerate() {
                 println!("- Texture format:");
                 println!(
-                    "    size: [{}, {}], color_depth: {}, pixel_encoding: {}, location: {:#x}",
-                    tf.size.x, tf.size.y, tf.color_depth, tf.pixel_encoding, tf.location
+                    "    size: [{}, {}], color_depth: {}, pixel_encoding: {}, location: {:#x}, index: {}",
+                    tf.size.x, tf.size.y, tf.color_depth, tf.pixel_encoding, tf.location, i
                 );
             }
         }

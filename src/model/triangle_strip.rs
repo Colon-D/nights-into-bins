@@ -6,10 +6,11 @@ pub struct TriangleStrip {
     pub pos: Vec<Vec3<f32>>,
     pub norm: Vec<Vec3<i8>>,
     pub uv: Vec<Vec2<f32>>,
+    pub material: u32,
 }
 
 impl TriangleStrip {
-    pub fn read<T: Read + Seek>(reader: &mut T) -> io::Result<Self> {
+    pub fn read<T: Read + Seek>(reader: &mut T, material: &mut u32) -> io::Result<Self> {
         // read until 0x10 aligned
         let reader_pos = reader.seek(SeekFrom::Current(0))?;
         let diff = 0x10 - (reader_pos % 0x10);
@@ -18,19 +19,26 @@ impl TriangleStrip {
         }
         // discard next 8 bytes
         reader.seek(SeekFrom::Current(8))?;
-        // discard until triangle strip begins
+        // discard until triangle strip begins (or found material)
+        // (material code should probably be outside of this function, but it is not)
         loop {
-            const FIND_SIGNATURE: [u8; 8] = [0x00, 0x00, 0x00, 0x20, 0x40, 0x40, 0x40, 0x40];
+            const FIND_TS_SIGNATURE: [u8; 8] = [0x00, 0x00, 0x00, 0x20, 0x40, 0x40, 0x40, 0x40];
+            const FIND_MAT_SIGNATURE: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF];
             let mut signature = [0; 8];
             let read = reader.read(&mut signature)?;
             if read == 0 {
                 println!("Model EOF!");
                 return Err(ErrorKind::UnexpectedEof.into());
             }
-            if signature == FIND_SIGNATURE {
-                break;
-            } else {
-                reader.seek(SeekFrom::Current(8))?;
+            match signature {
+                FIND_TS_SIGNATURE => break,
+                FIND_MAT_SIGNATURE => {
+                    *material = reader.read_u32::<LE>()? / 2;
+                    reader.seek(SeekFrom::Current(4))?;
+                }
+                _ => {
+                    reader.seek(SeekFrom::Current(8))?;
+                }
             }
         }
 
@@ -67,7 +75,12 @@ impl TriangleStrip {
             reader.seek(SeekFrom::Current(diff as _))?;
         }
 
-        Ok(Self { pos, norm, uv })
+        Ok(Self {
+            pos,
+            norm,
+            uv,
+            material: *material,
+        })
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> io::Result<()> {

@@ -1,7 +1,6 @@
 /target
 /out
 .vscode/
-*.png
 *.pdn
 *.ai
 *.obj
