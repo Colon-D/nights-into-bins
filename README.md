@@ -1,7 +1,12 @@
 # NiGHTS into BINs...
 ![](README/logo.png)
 
-Heavily based on [NightsImageTool](https://github.com/mg35/NightsImageTool)
+A port of Warden's [NightsImageTool](https://github.com/mg35/NightsImageTool)
+
+Exports a lot of Models and Textures from the game
+Imports replacement Textures into the game for 8-bit encoded textures
+Models do not have skeletons or animations
+I'm bad at describing things 😦
 
 ## Usage
 
@@ -96,7 +101,10 @@ This will output:
       - DATCLARIS_HAIR.BIN
 ```
 
-### Copy `./in/nights.test.nightsintobins/` into your `Reloaded-II/Mods/` directory. Enable the "Nights Model Bins" mod and launch the game.
+### Copy `./in/nights.test.nightsintobins/` into your `Reloaded-II/Mods/` directory.
+You will also want the `ModConfig.json` file, download it from this repository at `./in/nights.test.nightsintobins/ModConfig.json` and move it into the `nights.test.nightsintobins/` directory.
+
+### Enable the "NiGHTS into BINs" mod and launch the game.
 
 ![](README/example-2.png)
 
