@@ -23,7 +23,7 @@ impl TriangleStrip {
         // (material code should probably be outside of this function, but it is not)
         loop {
             const FIND_TS_SIGNATURE: [u8; 8] = [0x00, 0x00, 0x00, 0x20, 0x40, 0x40, 0x40, 0x40];
-            const FIND_MAT_SIGNATURE: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF];
+            const FIND_MAT_SIGNATURE: [u8; 4] = [0xFE, 0xFF, 0xFF, 0xFF];
             let mut signature = [0; 8];
             let read = reader.read(&mut signature)?;
             if read == 0 {
@@ -32,7 +32,7 @@ impl TriangleStrip {
             }
             match signature {
                 FIND_TS_SIGNATURE => break,
-                FIND_MAT_SIGNATURE => {
+                _ if signature[4..] == FIND_MAT_SIGNATURE => {
                     *material = reader.read_u32::<LE>()? / 2;
                     reader.seek(SeekFrom::Current(4))?;
                 }
