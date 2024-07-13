@@ -1,16 +1,56 @@
 use std::{
     collections::HashMap,
     env,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
 use texture::Texture;
 
-use crate::{model::Models, texture::Textures};
+use crate::{ddm::DDM, model::Models, texture::Textures};
 
+mod ddm;
 mod model;
 mod texture;
 mod vec;
+
+fn process_dir(file_path: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(file_path)? {
+        let file_path = entry?.path();
+        process_file(&file_path)?;
+    }
+    Ok(())
+}
+
+fn process_file(file_path: &Path) -> std::io::Result<()> {
+    if file_path.is_dir() {
+        process_dir(file_path)?;
+    } else if let Some(ext) = file_path.extension() {
+        let ext = ext.to_str().unwrap();
+        if ext == "BIN" {
+            println!("path: {}", file_path.to_str().unwrap());
+            // read from bin file
+            let models = Models::read_from_bin(&file_path)?;
+            let textures = Textures::read_from_bin(&file_path)?;
+            // write to obj files
+            models.write_to_obj(&file_path)?;
+            if !models.0.is_empty() {
+                textures.write_to_mtl(&file_path)?;
+            }
+            // write to png files
+            textures.write_to_image(&file_path)?;
+        } else if ext == "ddm" {
+            println!("path: {}", file_path.to_str().unwrap());
+            // read from ddm file
+            let ddm = DDM::read(&file_path)?;
+            // write to dds files
+            for (i, dds) in ddm.0.iter().enumerate() {
+                dds.write(&file_path, i)?;
+            }
+        }
+    }
+    Ok(())
+}
 
 fn main() -> std::io::Result<()> {
     // //* TEST
@@ -33,36 +73,11 @@ fn main() -> std::io::Result<()> {
 
     match args.len() {
         2 => {
-            let binary_path = Path::new(&args[1]);
-
-            if binary_path.is_dir() {
-                for entry in std::fs::read_dir(binary_path)? {
-                    let file_path = entry?.path();
-                    if file_path.extension().unwrap().to_str().unwrap() == "BIN" {
-                        println!("path: {}", file_path.to_str().unwrap());
-                        // read from bin file
-                        let models = Models::read_from_bin(&file_path)?;
-                        let textures = Textures::read_from_bin(&file_path)?;
-                        // write to obj files
-                        models.write_to_obj(&file_path)?;
-                        if !models.0.is_empty() {
-                            textures.write_to_mtl(&file_path)?;
-                        }
-                        // write to png files
-                        textures.write_to_image(&file_path)?;
-                    }
-                }
+            let file_path = Path::new(&args[1]);
+            if file_path.is_dir() {
+                process_dir(file_path)?;
             } else {
-                // read from bin file
-                let models = Models::read_from_bin(&binary_path)?;
-                let textures = Textures::read_from_bin(&binary_path)?;
-                // write to obj files
-                models.write_to_obj(&binary_path)?;
-                if !models.0.is_empty() {
-                    textures.write_to_mtl(&binary_path)?;
-                }
-                // write to png files
-                textures.write_to_image(&binary_path)?;
+                process_file(file_path)?;
             }
         }
         3 => {
