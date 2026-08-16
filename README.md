@@ -41,12 +41,12 @@ Open PowerShell in the directory with the nights_into_bins executable.
 
 Run:
 ```
-./nights_into_bins "C:/Program Files/Steam/steamapps/common/NiGHTS Into Dreams/afs/DATCLARIS.BIN"
-./nights_into_bins "C:/Program Files/Steam/steamapps/common/NiGHTS Into Dreams/afs/DATCLARIS_HAIR.BIN"
+./nights_into_bins "C:/Program Files (x86)/Steam/steamapps/common/NiGHTS Into Dreams/afs/DATCLARIS.BIN"
+./nights_into_bins "C:/Program Files (x86)/Steam/steamapps/common/NiGHTS Into Dreams/afs/DATCLARIS_HAIR.BIN"
 ```
 Or run (this will take a LOT longer):
 ```
-./nights_into_bins "C:/Program Files/Steam/steamapps/common/NiGHTS Into Dreams/afs/"
+./nights_into_bins "C:/Program Files (x86)/Steam/steamapps/common/NiGHTS Into Dreams/afs/"
 ```
 
 This will output:
@@ -88,7 +88,7 @@ magick mogrify -colors 256 ./replacements/*.png
 
 ### Import the replacements:
 ```
-./nights_into_bins "C:/Program Files/Steam/steamapps/common/NiGHTS Into Dreams/afs/" "./replacements"
+./nights_into_bins "C:/Program Files (x86)/Steam/steamapps/common/NiGHTS Into Dreams/afs/" "./replacements"
 ```
 
 This will output:
